@@ -3,6 +3,10 @@ import pandas as pd
 import sklearn
 import os
 import sys
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from tensorflow.keras import models, layers
+from tensorflow.keras.utils import to_categorical
 
 # Absolute path
 FILE_PATH = 'data/01_input_history.csv'
@@ -123,3 +127,37 @@ print(X_train.head(1))
 print(y_train.head(1))
 print(X_test.head(1))
 print(y_test.head(1))
+
+
+
+
+# Feature Scaling
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
+# Neural Network Architecture
+model = models.Sequential()
+
+# Input layer (shape is the number of features)
+model.add(layers.Dense(128, activation='relu', input_dim=X_train.shape[1]))
+model.add(layers.Dropout(0.2))  # Dropout for regularization
+model.add(layers.Dense(64, activation='relu'))
+model.add(layers.Dropout(0.2))  # Dropout for regularization
+model.add(layers.Dense(32, activation='relu'))
+
+# Output layer (single neuron for regression, no activation function)
+model.add(layers.Dense(1))
+
+# Compile the model
+model.compile(optimizer='adam', loss='mean_squared_error')
+
+# Train the model
+history = model.fit(X_train, y_train, epochs=100, batch_size=32, validation_data=(X_test, y_test))
+
+# Evaluate the model on the test set
+test_loss = model.evaluate(X_test, y_test)
+print(f'Test Loss: {test_loss}')
+
+# Make predictions
+y_pred = model.predict(X_test)
