@@ -36,9 +36,9 @@ for Country in nazioni:
     plt.ylabel("Quantità Prodotta")
     plt.legend(title="Tipo di Prodotto")
     plt.grid(True)
-    plt.show()
+
     # Salva il grafico come immagine
-    output_path = f"/home/alessiovalle/Scrivania/hackathon/{Country}_produzione.png"
-    plt.savefig(output_path)
+    output_path = f"/home/alessiovalle/Scrivania/hackathon/country/{Country}_produzione.png"
+    plt.savefig(output_path, format='png')
     print(f"Grafico salvato: {output_path}")
     plt.close()
