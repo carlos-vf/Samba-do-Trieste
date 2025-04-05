@@ -40,7 +40,7 @@ for prodotto in prodotti:
     plt.grid(True)
     
     # Salva il grafico come immagine
-    output_path = f"/home/alessiovalle/Scrivania/hackathon/{prodotto}_produzione.png"
-    plt.show()
+    output_path = f"/home/alessiovalle/Scrivania/hackathon/product/{prodotto}_produzione.png"
+    plt.savefig(output_path, format='png')
     print(f"Grafico salvato: {output_path}")
     plt.close()

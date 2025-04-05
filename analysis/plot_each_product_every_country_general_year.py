@@ -15,7 +15,7 @@ if not all(col in data.columns for col in required_columns):
     raise ValueError(f"Il file CSV deve contenere le colonne: {', '.join(required_columns)}")
 
 # Converte la colonna 'Month' in formato datetime
-data['Month'] = pd.to_datetime(data['Month'])
+data['Month'] = data['Month'].str[:3].str.capitalize()
 
 # Raggruppa i dati per Product
 prodotti = data['Product'].unique()
@@ -36,11 +36,11 @@ for prodotto in prodotti:
     plt.title(f"Produzione per prodotto: {prodotto}")
     plt.xlabel("Mese")
     plt.ylabel("Quantità Prodotta")
-    plt.legend(title="Nazione")
+    plt.legend(title="Nazione", bbox_to_anchor=(1.01, 1), loc='upper left')  # Legenda fuori dal grafico
     plt.grid(True)
     
     # Salva il grafico come immagine
-    output_path = f"/home/alessiovalle/Scrivania/hackathon/{prodotto}_produzione.png"
-    plt.show()
+    output_path = f"/home/alessiovalle/Scrivania/hackathon/productgy/{prodotto}_produzione.png"
+    plt.savefig(output_path, format='png')
     print(f"Grafico salvato: {output_path}")
     plt.close()
