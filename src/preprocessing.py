@@ -3,10 +3,7 @@ import pandas as pd
 import sklearn
 import os
 import sys
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from tensorflow.keras import models, layers
-from tensorflow.keras.utils import to_categorical
+import nn
 
 # Absolute path
 FILE_PATH = 'data/01_input_history.csv'
@@ -98,19 +95,23 @@ class Preprocess:
         
         self.df = pd.get_dummies(self.df, columns=['Country', 'Product'], drop_first=False)
                 
-    def split_test_train(self, test_year=2023, target_col='Quantity'):
+    def split_test_train(self, test_year=2022, target_col='Quantity'):
         """
         Splits the data into train and test sets based on the year.
         """
         train_data = self.df[self.df['Year'] < test_year]
-        test_data = self.df[self.df['Year'] == test_year]
+        val_data = self.df[self.df['Year'] == test_year]
+        test_data = self.df[self.df['Year'] == (test_year+1)]
         
         X_train = train_data.drop(columns=[target_col])
         y_train = train_data[target_col]
+        X_val = val_data.drop(columns=[target_col])
+        y_val = val_data[target_col]
         X_test = test_data.drop(columns=[target_col])
         y_test = test_data[target_col]
         
-        return X_train, y_train, X_test, y_test
+        
+        return X_train, y_train, X_val, y_val, X_test, y_test
     
     def save_on_csv(self, path):
         """
@@ -129,43 +130,17 @@ if __name__ == "__main__":
     # Save the processed data to a CSV file
     preprocess.save_on_csv('data/processed_data.csv')
 
-    X_train, y_train, X_test, y_test = preprocess.split_test_train()
+    X_train, y_train, X_val, y_val, X_test, y_test = preprocess.split_test_train()
+    
+    X_train.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
+    y_train.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
+    X_test.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
+    y_test.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
+    X_val.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
+    y_val.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
 
-    print(X_train.head(1))
-    print(y_train.head(1))
-    print(X_test.head(1))
-    print(y_test.head(1))
+    # Neural Netowrk
+    y_pred = nn.neural_network(X_train, y_train, X_val, y_val, X_test, y_test)
 
-
-
-# Feature Scaling
-scaler = StandardScaler()
-X_train = scaler.fit_transform(X_train)
-X_test = scaler.transform(X_test)
-
-# Neural Network Architecture
-model = models.Sequential()
-
-# Input layer (shape is the number of features)
-model.add(layers.Dense(128, activation='relu', input_dim=X_train.shape[1]))
-model.add(layers.Dropout(0.2))  # Dropout for regularization
-model.add(layers.Dense(64, activation='relu'))
-model.add(layers.Dropout(0.2))  # Dropout for regularization
-model.add(layers.Dense(32, activation='relu'))
-
-# Output layer (single neuron for regression, no activation function)
-model.add(layers.Dense(1))
-
-# Compile the model
-model.compile(optimizer='adam', loss='mean_squared_error')
-
-# Train the model
-history = model.fit(X_train, y_train, epochs=100, batch_size=32, validation_data=(X_test, y_test))
-
-# Evaluate the model on the test set
-test_loss = model.evaluate(X_test, y_test)
-print(f'Test Loss: {test_loss}')
-
-# Make predictions
-y_pred = model.predict(X_test)
+    
 
