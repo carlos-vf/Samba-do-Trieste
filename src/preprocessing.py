@@ -12,14 +12,11 @@ abs_path = os.path.abspath(os.path.join("..", FILE_PATH))
 if not os.path.exists(FILE_PATH):
     raise FileNotFoundError(f"Il file {FILE_PATH} non esiste.")
 
-data = pd.read_csv(FILE_PATH)
-
 class Preprocess:
     
     def __init__(self, data):
-        self.data = data.copy()
         self.rolled_data = None
-        self.df = None
+        self.df = data.copy()
     
     def get_data(self):
         return self.df
@@ -69,8 +66,6 @@ class Preprocess:
         self.rolled_data = df
     
     def preprocess_data(self):
-        self.df = self.data.copy()
-        
         month_map = {
             "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
             "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12
@@ -112,14 +107,28 @@ class Preprocess:
         y_test = test_data[target_col]
         
         return X_train, y_train, X_test, y_test
+    
+    def save_on_csv(self, path):
+        """
+        Save the processed DataFrame to a CSV file.
+        """
+        self.df.to_csv(path, index=False)
                 
-preprocess = Preprocess(data)
-preprocess.preprocess_data()
-processed_data = preprocess.get_data()
+                
+if __name__ == "__main__":
+    data = pd.read_csv(FILE_PATH)
+    
+    preprocess = Preprocess(data)
+    preprocess.preprocess_data()
+    processed_data = preprocess.get_data()
+    
+    # Save the processed data to a CSV file
+    preprocess.save_on_csv('data/processed_data.csv')
 
-X_train, y_train, X_test, y_test = preprocess.split_test_train()
+    X_train, y_train, X_test, y_test = preprocess.split_test_train()
 
-print(X_train.head(1))
-print(y_train.head(1))
-print(X_test.head(1))
-print(y_test.head(1))
+    print(X_train.head(1))
+    print(y_train.head(1))
+    print(X_test.head(1))
+    print(y_test.head(1))
+

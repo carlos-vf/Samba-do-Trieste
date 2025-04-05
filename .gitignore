@@ -1,3 +1,2 @@
-country/
-product/
-productgy/
+venv/
+data/processed_data.csv
