@@ -1,0 +1,46 @@
+Origin,Destination,Unit Cost
+Japan,Australia,13.43
+Japan,Brazil,10.42
+Japan,Egypt,9.9
+Japan,Italy,13.01
+Japan,South Africa,8.92
+Japan,France,5.6
+Japan,India,6.75
+Japan,United Kingdom,10.12
+Japan,Russia,12.6
+Australia,Brazil,10.07
+Australia,Egypt,8.89
+Australia,Italy,8.35
+Australia,South Africa,13.61
+Australia,France,10.61
+Australia,India,7.78
+Australia,United Kingdom,9.33
+Australia,Russia,11.06
+Brazil,Egypt,10.35
+Brazil,Italy,8.28
+Brazil,South Africa,10.39
+Brazil,France,9.15
+Brazil,India,10.28
+Brazil,United Kingdom,7.3
+Brazil,Russia,11.9
+Egypt,Italy,10.86
+Egypt,South Africa,9.72
+Egypt,France,10.98
+Egypt,India,11.43
+Egypt,United Kingdom,8.9
+Egypt,Russia,8.51
+Italy,South Africa,12.76
+Italy,France,8.42
+Italy,India,10.82
+Italy,United Kingdom,9.42
+Italy,Russia,9.3
+South Africa,France,9.98
+South Africa,India,8.91
+South Africa,United Kingdom,8.8
+South Africa,Russia,10.81
+France,India,12.11
+France,United Kingdom,9.49
+France,Russia,9.45
+India,United Kingdom,6.87
+India,Russia,8.97
+United Kingdom,Russia,13.01
