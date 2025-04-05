@@ -19,9 +19,10 @@ class Preprocess:
     def __init__(self, data):
         self.data = data.copy()
         self.rolled_data = None
+        self.df = None
     
     def get_data(self):
-        return self.data
+        return self.df
     
     def rolling_stats(self, window=3):
         """
@@ -92,14 +93,33 @@ class Preprocess:
         self.df['Year'] = self.df['Month'].dt.year
         self.df['Month'] = self.df['Month'].dt.month
         
-        
         self.rolling_stats(window=6)
         
         self.df = self.rolled_data.dropna(subset=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
         
         self.df = pd.get_dummies(self.df, columns=['Country', 'Product'], drop_first=False)
                 
+    def split_test_train(self, test_year=2023, target_col='Quantity'):
+        """
+        Splits the data into train and test sets based on the year.
+        """
+        train_data = self.df[self.df['Year'] < test_year]
+        test_data = self.df[self.df['Year'] == test_year]
+        
+        X_train = train_data.drop(columns=[target_col])
+        y_train = train_data[target_col]
+        X_test = test_data.drop(columns=[target_col])
+        y_test = test_data[target_col]
+        
+        return X_train, y_train, X_test, y_test
+                
 preprocess = Preprocess(data)
-processed_data = preprocess.preprocess_data()
+preprocess.preprocess_data()
+processed_data = preprocess.get_data()
 
-# print(processed_data.head(1))
+X_train, y_train, X_test, y_test = preprocess.split_test_train()
+
+print(X_train.head(1))
+print(y_train.head(1))
+print(X_test.head(1))
+print(y_test.head(1))
