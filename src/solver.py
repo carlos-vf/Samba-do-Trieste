@@ -9,10 +9,6 @@ INPUT_TARGET_PATH = SCRIPT_DIR.parent / "data" / "02_input_target.csv"
 PRODUCTION_PLAN_PATH = SCRIPT_DIR.parent / "output" / "02_output_productionPlan_8475.csv"
 SHIPMENT_PLAN_PATH = SCRIPT_DIR.parent / "output" / "02_output_shipments_8475.csv"
 
-from pyomo.environ import *
-import pandas as pd
-import csv
-
 # Create the model
 model = ConcreteModel()
 
@@ -70,7 +66,7 @@ def objective_rule(model):
     return sum(model.Demand[n,m,p] - model.X[n, m, p] for n in model.N for m in model.M for p in model.P)
 model.Obj = Objective(rule=objective_rule, sense=minimize)
 
-solver = SolverFactory('glpk', executable = '/usr/bin/glpsol')
+solver = SolverFactory('glpk')
 results = solver.solve(model, tee=False)  # 'tee=True' shows solver output
 
 # Optional: check if it's optimal
@@ -150,12 +146,3 @@ def create_csv():
     print(f"CSV file '{csv_file_path}' has been created.")
 
 create_csv()
-
-# 3 PROBLEM
-# Objective: Example – Minimize total shipment cost (you can customize)
-# Assume a cost dictionary: cost[i,j,p] representing cost per unit from i to j for product p
-#model.Cost = Param(model.N, model.N, model.P, default=1)  # Provide a cost dict if needed
-
-#def objective_rule(model):
-#    return sum(model.Cost[i, j, p] * model.SHIP[i, j, m, p] for i in model.N for j in model.N for m in model.M for p in model.P if i != j)
-#model.Obj = Objective(rule=objective_rule, sense=minimize)
