@@ -4,6 +4,8 @@ import lightgbm as lgb # Assuming 'model' is your loaded LGBM model
 import os
 
 
+YEAR = 2023
+
 # Absolute path
 FILE_PATH = 'data/01_input_history.csv'
 abs_path = os.path.abspath(os.path.join("..", FILE_PATH))
@@ -38,9 +40,8 @@ class Preprocess:
         group_cols = ['Country', 'Product']
         
         # Create lag features (shift the Quantity by 1, 2, 3 months, etc.)
-        df['lag_1'] = df.groupby(group_cols)['Quantity'].shift(1)
-        df['lag_2'] = df.groupby(group_cols)['Quantity'].shift(2)
-        df['lag_3'] = df.groupby(group_cols)['Quantity'].shift(3)
+        for i in range(1, 13):
+            df[f'lag_{i}'] = df.groupby(group_cols)['Quantity'].shift(i)
 
         # Example rolling features: rolling mean, rolling std
         # We'll do rolling after shift(1) so the current row isn't included in its own average.
@@ -48,7 +49,7 @@ class Preprocess:
         # just be mindful to set min_periods if needed.
         
         # rolling_mean
-        df['rolling_mean_6'] = (
+        df['rolling_mean_24'] = (
             df.groupby(group_cols)['Quantity']
               .rolling(window=window, min_periods=1)
               .mean()
@@ -56,7 +57,7 @@ class Preprocess:
         )
         
         # rolling_std
-        df['rolling_std_6'] = (
+        df['rolling_std_24'] = (
             df.groupby(group_cols)['Quantity']
               .rolling(window=window, min_periods=1)
               .std()
@@ -89,12 +90,12 @@ class Preprocess:
         self.df['Year'] = self.df['Date'].dt.year
         self.df['Month'] = self.df['Date'].dt.month
 
-        self.df = self.df[self.df['Year'] < 2024]
+        self.df = self.df[self.df['Year'] < YEAR]
         
         
-        self.rolling_stats(window=6)
+        self.rolling_stats(window=24)
         
-        self.df = self.rolled_data.dropna(subset=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
+        self.df = self.rolled_data.dropna(subset=['lag_1', 'lag_2', 'lag_3', 'lag_4','lag_5','lag_6','lag_7','lag_8','lag_9','lag_10','lag_11','lag_12','rolling_mean_24', 'rolling_std_24'])
         
 
     
@@ -122,11 +123,12 @@ df_history['month_cos'] = np.cos(2 * np.pi * df_history['Month']/12)
 
 # --- Update your feature list ---
 # Original features might include lags, rolling stats, OHE/categorical Country/Product
-original_features = ['Year', 'Month', 'lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6', 'Country', 'Product', ...] # Use original Country/Product if using category dtypes
+#original_features = ['Year', 'Month', 'lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6', 'Country', 'Product', ...] # Use original Country/Product if using category dtypes
 time_features = ['month_sin', 'month_cos']
 
 df_history = df_history.sort_values(by='Date')
 last_date = df_history['Date'].max() # Assuming a 'Date' column/index
+print(last_date)
 unique_combinations = df_history[['Country', 'Product']].drop_duplicates().to_records(index=False)
 
 df_working = df_history.copy() # Copy to append predictions
@@ -138,14 +140,16 @@ future_dates = pd.date_range(start=last_date + pd.DateOffset(months=1), periods=
 target = 'Quantity'
 
 # Feature columns (all columns except the target)
-train_features = [col for col in df_history.columns if col != target and col != 'Date']
+train_features = [col for col in df_history.columns if col != target and col != 'Date' and col != 'Month']
 
 X = df_history[train_features]
 y = df_history[target]
 
+print(X.iloc[1])
+
 # Define model parameters (you'll likely need to tune these)
 params = {
-    'objective': 'regression_l1', # L1 loss (Mean Absolute Error) is often more robust to outliers than L2 (MSE)
+    'objective': 'regression_l2', # L1 loss (Mean Absolute Error) is often more robust to outliers than L2 (MSE)
                                   # Consider 'regression' (L2) or implementing your custom objective if possible
     'metric': 'mae',              # Use 'mae' or 'rmse' for monitoring. Evaluation needs your custom metric.
     'n_estimators': 1000,         # Number of boosting rounds
@@ -253,10 +257,14 @@ print("Recursive forecasting complete.")
 
 # --- Format Final Output ---
 final_predictions = pd.concat(all_predictions, ignore_index=True)
+
+# Create the 'Month' column in the desired 'MonYYYY' format
+final_predictions['Month'] = final_predictions['Date'].dt.strftime('%b%Y')
+
 output_df = final_predictions[['Country', 'Product', 'Month', 'Quantity']]
 
 # Save the output
-output_filename = '01_output_prediction_CODE.csv'
+output_filename = 'data/01_output_prediction_8475.csv'
 output_df.to_csv(output_filename, sep=',', index=False)
 
 print(f"Predictions saved to {output_filename}")
