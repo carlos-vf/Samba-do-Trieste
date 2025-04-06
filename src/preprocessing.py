@@ -1,140 +1,181 @@
 import numpy as np
 import pandas as pd
-import sklearn
+# import sklearn # No longer needed directly here if splitting is handled outside
 import os
 import sys
 from pathlib import Path
 
-# Absolute path
-INPUT_HISTORY_CSV = '01_input_history.csv'
-PROCESSED_DATA_CSV = 'processed_data.csv'
-
+# Absolute path (relative to the parent directory of the script's location)
 SCRIPT_DIR = Path(__file__).parent
 DATA_DIR = SCRIPT_DIR.parent / "data"
+INPUT_HISTORY_CSV = '01_input_history.csv'
+PROCESSED_DATA_CSV = DATA_DIR / 'processed_lgbm_data.csv'  # Specific name for LGBM
 
-abs_path = os.path.abspath(os.path.join("..", INPUT_HISTORY_CSV))
-
-if not os.path.exists(DATA_DIR / INPUT_HISTORY_CSV):
-    raise FileNotFoundError(f"Il file {DATA_DIR / INPUT_HISTORY_CSV} non esiste.")
+# Ensure the input file exists
+if not (DATA_DIR / INPUT_HISTORY_CSV).exists():
+    raise FileNotFoundError(f"Input file {(DATA_DIR / INPUT_HISTORY_CSV)} not found.")
 
 class Preprocess:
-    
+
     def __init__(self, data):
-        self.rolled_data = None
         self.df = data.copy()
-    
+        self.feature_cols = None  # To store final feature column names
+        self.categorical_features = ['Country', 'Product']  # Keep track
+
     def get_data(self):
         return self.df
-    
-    def parse_dates(self, prophet=False):
-        """Parses the Month column into Year and Month numbers."""
+
+    def get_feature_columns(self):
+        if self.feature_cols is None:
+            raise ValueError("Preprocessing (feature generation) must be run first.")
+        exclude_cols = ['Quantity', 'Year', 'Month_Num', 'Month', 'ds']
+        return [col for col in self.feature_cols if col not in exclude_cols]
+
+    def parse_dates(self, prophet_format=False):
+        """Parses the Month column into Year and Month numbers, adds cyclical features."""
         month_map = {
             "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
             "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12
         }
+        month_abbrev_map = {v: k for k, v in month_map.items()}
 
         def parse_month_year(mmyyyy):
             month_abbrev = mmyyyy[:3]
             year_str = mmyyyy[3:]
+            if not year_str.isdigit():
+                raise ValueError(f"Could not parse year from '{mmyyyy}'")
             year = int(year_str)
+            if month_abbrev not in month_map:
+                raise ValueError(f"Could not parse month abbreviation from '{mmyyyy}'")
             month = month_map[month_abbrev]
             return year, month
 
-        if prophet:
-            # If Month is already numeric, just build ds. Otherwise parse the text format.
-            if self.df['Month'].dtype == 'int':
-                self.df['ds'] = pd.to_datetime(self.df['Year'].astype(str) + '-' + 
-                                               self.df['Month'].astype(str).str.zfill(2) + '-01')
-                self.df['y'] = self.df['Quantity']
-                self.df.drop(columns=['Quantity', 'Year', 'Month'], inplace=True)
-            else:
-                parsed_dates = self.df['Month'].apply(lambda x: pd.Series(parse_month_year(x), 
-                                                                          index=['Year', 'Month_Num']))
-                self.df['Year'] = parsed_dates['Year']
-                self.df['Month'] = parsed_dates['Month_Num']
-                self.df['ds'] = pd.to_datetime(self.df['Year'].astype(str) + '-' + 
-                                               self.df['Month'].astype(str).str.zfill(2) + '-01')
-                self.df['y'] = self.df['Quantity']
-                self.df.drop(columns=['Quantity', 'Year', 'Month'], inplace=True)
+        if 'Year' in self.df.columns and 'Month_Num' in self.df.columns:
+            print("Date columns 'Year' and 'Month_Num' already exist. Skipping parsing.")
+            self.df['Year'] = self.df['Year'].astype(int)
+            self.df['Month_Num'] = self.df['Month_Num'].astype(int)
+        elif 'Month' in self.df.columns and isinstance(self.df['Month'].iloc[0], str):
+            print("Parsing 'Month' column...")
+            parsed_dates = self.df['Month'].apply(
+                lambda x: pd.Series(parse_month_year(x), index=['Year', 'Month_Num'])
+            )
+            self.df = pd.concat([self.df, parsed_dates], axis=1)
         else:
-            parsed_dates = self.df['Month'].apply(lambda x: pd.Series(parse_month_year(x), 
-                                                                      index=['Year', 'Month_Num']))
-            self.df['Year'] = parsed_dates['Year']
-            self.df['Month'] = parsed_dates['Month_Num']
-            self.df['month_sin'] = np.sin(2 * np.pi * parsed_dates['Month_Num']/12)
-            self.df['month_cos'] = np.cos(2 * np.pi * parsed_dates['Month_Num']/12)
-            
-        
-    def rolling_stats(self, window=3):
+            raise ValueError("Cannot parse dates. Requires either 'Month' (string) or 'Year'/'Month_Num' columns.")
+
+        self.df['month_sin'] = np.sin(2 * np.pi * self.df['Month_Num'] / 12)
+        self.df['month_cos'] = np.cos(2 * np.pi * self.df['Month_Num'] / 12)
+
+        if prophet_format:
+            self.df['ds'] = pd.to_datetime(
+                self.df['Year'].astype(str) + '-' +
+                self.df['Month_Num'].astype(str).str.zfill(2) + '-01'
+            )
+            self.df['y'] = self.df['Quantity']
+
+    def generate_features(self, rolling_window=6, lag_periods=[1, 2, 3, 12]):
         """Creates lagged and rolling features."""
-        # Ensure data is sorted for correct lagging/rolling
-        self.df.sort_values(by=['Country', 'Product', 'Year', 'Month'], inplace=True)
+        if not all(col in self.df.columns for col in ['Country', 'Product', 'Year', 'Month_Num', 'Quantity']):
+            raise ValueError("Required columns ('Country', 'Product', 'Year', 'Month_Num', 'Quantity') not found. Run parse_dates first.")
+
+        self.df.sort_values(by=['Country', 'Product', 'Year', 'Month_Num'], inplace=True)
+        self.df.reset_index(drop=True, inplace=True)
         group_cols = ['Country', 'Product']
 
-        self.df['lag_1'] = self.df.groupby(group_cols)['Quantity'].shift(1)
-        self.df['lag_2'] = self.df.groupby(group_cols)['Quantity'].shift(2)
-        self.df['lag_3'] = self.df.groupby(group_cols)['Quantity'].shift(3)
+        print(f"Generating lags: {lag_periods}")
+        for lag in lag_periods:
+            self.df[f'lag_{lag}'] = self.df.groupby(group_cols)['Quantity'].shift(lag)
 
-        # Use transform for potentially cleaner rolling calculations
-        self.df['rolling_mean_6'] = self.df.groupby(group_cols)['Quantity'].transform(
-            lambda x: x.rolling(window=window, min_periods=1).mean()
+        print(f"Generating rolling mean with window: {rolling_window}")
+        self.df[f'rolling_mean_{rolling_window}'] = self.df.groupby(group_cols)['Quantity'].transform(
+            lambda x: x.shift(1).rolling(window=rolling_window, min_periods=1).mean()
         )
-        self.df['rolling_std_6'] = self.df.groupby(group_cols)['Quantity'].transform(
-            lambda x: x.rolling(window=window, min_periods=1).std()
+        print(f"Generating rolling std dev with window: {rolling_window}")
+        self.df[f'rolling_std_{rolling_window}'] = self.df.groupby(group_cols)['Quantity'].transform(
+            lambda x: x.shift(1).rolling(window=rolling_window, min_periods=1).std()
         )
-        # Fill initial NaNs in std dev (first element of each group)
-        self.df['rolling_std_6'] = self.df.groupby(group_cols)['rolling_std_6'].ffill()
-    
-    def handle_dummies(self):
-        """Creates one-hot encoded features."""
-        self.df = pd.get_dummies(self.df, columns=['Country', 'Product'], drop_first=False)
 
-    def drop_na_features(self):
-        """Drops rows with NaN in lag/rolling features."""
-        feature_cols = ['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6']
-        self.df.dropna(subset=feature_cols, inplace=True)
-        
-    def preprocess_data(self, window=6):
+        print("Filling NaNs generated by lags/rolling features...")
+        feature_cols_to_fill = [
+            f'lag_{lag}' for lag in lag_periods
+        ] + [f'rolling_mean_{rolling_window}', f'rolling_std_{rolling_window}']
+        self.df.fillna({col: 0 for col in feature_cols_to_fill}, inplace=True)
+
+        print("Feature generation complete.")
+
+    def handle_categorical(self):
+        """Converts categorical features to a format suitable for LightGBM."""
+        print("Converting categorical features...")
+        for col in self.categorical_features:
+            if col in self.df.columns:
+                self.df[col] = self.df[col].astype('category')
+            else:
+                print(f"Warning: Categorical column '{col}' not found in DataFrame.")
+
+    def full_preprocess(self, rolling_window=6, lag_periods=[1, 2, 3, 12]):
         """Consolidated preprocessing steps."""
+        print("--- Starting Full Preprocessing ---")
         self.parse_dates()
-        self.rolling_stats(window=window)
-        self.drop_na_features() # Drop NAs *after* creating features
-        self.handle_dummies()
-                
-    def split_test_train(data, val_year = 2022, test_year=2023, target_col='Quantity'):
-        """
-        Splits the data into train and test sets based on the year.
-        """
-        train_data = data[(data['Year'] != val_year) & (data['Year'] != test_year)]
-        val_data = data[data['Year'] == val_year]
-        test_data = data[data['Year'] == test_year]
-        
-        X_train = train_data.drop(columns=[target_col])
-        y_train = train_data[target_col]
-        X_val = val_data.drop(columns=[target_col])
-        y_val = val_data[target_col]
-        X_test = test_data.drop(columns=[target_col])
-        y_test = test_data[target_col]
-        
-        return X_train, y_train, X_val, y_val, X_test, y_test
-    
-    def save_on_csv(self, path):
-        """
-        Save the processed DataFrame to a CSV file.
-        """
-        self.df.to_csv(path, index=False)
-                
-if __name__ == "__main__":
-    data = pd.read_csv(DATA_DIR / INPUT_HISTORY_CSV)
-    
-    preprocess = Preprocess(data)
-    preprocess.preprocess_data()
-    processed_data = preprocess.get_data()
-    
-    # Save the processed data to a CSV file
-    preprocess.save_on_csv('data/processed_data.csv')
+        self.generate_features(rolling_window=rolling_window, lag_periods=lag_periods)
+        self.handle_categorical()
 
-    X_train, y_train, X_val, y_val, X_test, y_test = preprocess.split_test_train()
+        potential_features = list(self.df.columns)
+        exclude_cols = ['Quantity', 'Month', 'ds', 'y']
+        self.feature_cols = [col for col in potential_features if col not in exclude_cols]
+
+        print("--- Preprocessing Complete ---")
+        return self.df
+
+    def save_processed_data(self, path=PROCESSED_DATA_CSV):
+        """Save the processed DataFrame to a CSV file."""
+        print(f"Saving processed data to {path}...")
+        try:
+            self.df.to_csv(path, index=False)
+            print("Save successful.")
+        except Exception as e:
+            print(f"Error saving processed data: {e}")
+
+    @staticmethod
+    def get_train_val_split(data, val_year):
+        """Splits data into training and validation sets based on year."""
+        if 'Year' not in data.columns:
+            raise ValueError("Column 'Year' needed for splitting.")
+
+        train_data = data[data['Year'] < val_year].copy()
+        val_data = data[data['Year'] == val_year].copy()
+
+        print(f"Train data shape: {train_data.shape}")
+        print(f"Validation data shape: {val_data.shape}")
+        return train_data, val_data
+
+    @staticmethod
+    def get_data_for_final_train(data, forecast_start_year):
+        """Gets all data before the forecast period for final training."""
+        if 'Year' not in data.columns:
+            raise ValueError("Column 'Year' needed for final training selection.")
+        return data[data['Year'] < forecast_start_year].copy()
+
+
+if __name__ == "__main__":
+    print("Running preprocessing standalone...")
+    raw_data = pd.read_csv(DATA_DIR / INPUT_HISTORY_CSV)
+    preprocessor = Preprocess(raw_data)
+    processed_df = preprocessor.full_preprocess(rolling_window=6, lag_periods=[1, 2, 3, 12])
+    preprocessor.save_processed_data()
+
+    print("\nProcessed DataFrame Info:")
+    processed_df.info()
+    print("\nProcessed DataFrame Head:")
+    print(processed_df.head())
+    print("\nFeature Columns Identified:")
+    print(preprocessor.get_feature_columns())
+
+    print("\nExample Train/Validation Split (Validation Year 2022):")
+    train_df, val_df = Preprocess.get_train_val_split(processed_df, val_year=2022)
+
+    print("\nExample Data for Final Training (Forecast starting 2023):")
+    final_train_df = Preprocess.get_data_for_final_train(processed_df, forecast_start_year=2023)
+    print(f"Final training data shape: {final_train_df.shape}")
 
 
 
