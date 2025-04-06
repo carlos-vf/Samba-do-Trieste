@@ -1,0 +1,101 @@
+import pandas as pd
+import lightgbm as lgb
+import numpy as np
+
+# --- 1. Load your data ---
+df = pd.read_csv('processed_data.csv')
+df = df[df['Year'] < 2024]
+
+#df = df.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
+
+df['Date'] = pd.to_datetime(df[['Year', 'Month']].assign(DAY=1))
+df = df.sort_values(by='Date').set_index('Date')
+
+
+# --- 2. Define Features (X) and Target (y) ---
+# Target variable
+target = 'Quantity'
+
+# Feature columns (all columns except the target)
+# Make sure to include your lags, rolling stats, date parts, and one-hot encoded features
+features = [col for col in df.columns if col != target]
+
+X = df[features]
+y = df[target]
+
+# --- 3. Split Data (Crucial: Use Time Series Split) ---
+# For time series, you should NOT randomly shuffle.
+# Train on older data, validate/test on newer data.
+# Example: Split the last 12 months for testing
+split_point = len(df) - 12 # Or define based on date
+X_train, X_test = X[:split_point], X[split_point:]
+y_train, y_test = y[:split_point], y[split_point:]
+
+# Optional: Further split X_train, y_train for validation during hyperparameter tuning
+
+# --- 4. Initialize and Train LightGBM Model ---
+# Define model parameters (you'll likely need to tune these)
+params = {
+    'objective': 'regression_l1', # L1 loss (Mean Absolute Error) is often more robust to outliers than L2 (MSE)
+                                  # Consider 'regression' (L2) or implementing your custom objective if possible
+    'metric': 'mae',              # Use 'mae' or 'rmse' for monitoring. Evaluation needs your custom metric.
+    'n_estimators': 1000,         # Number of boosting rounds
+    'learning_rate': 0.05,
+    'feature_fraction': 0.8,      # Fraction of features considered per iteration
+    'bagging_fraction': 0.8,      # Fraction of data used per iteration (requires bagging_freq > 0)
+    'bagging_freq': 1,
+    'verbose': -1,                # Suppress verbose output
+    'n_jobs': -1,                 # Use all available CPU cores
+    'seed': 42,
+    'boosting_type': 'gbdt',
+    # Add other parameters like 'num_leaves', 'max_depth', etc. for tuning
+}
+
+# Initialize the model
+model = lgb.LGBMRegressor(**params)
+
+# Train the model
+# Add early stopping for efficiency using a validation set (e.g., last N months of the training set)
+# model.fit(X_train, y_train,
+#           eval_set=[(X_val, y_val)],
+#           eval_metric='mae', # Monitor a standard metric
+#           callbacks=[lgb.early_stopping(100, verbose=True)]) # Stop if validation score doesn't improve for 100 rounds
+
+# Train without early stopping (simpler, but might overfit)
+model.fit(X_train, y_train)
+
+# --- 5. Make Predictions ---
+predictions = model.predict(X_test)
+
+# Ensure predictions are non-negative (demand cannot be negative)
+predictions[predictions < 0] = 0
+
+# --- 6. Evaluate ---
+# Define your custom loss function from the exercise description
+def custom_loss(y_true, y_pred):
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+    loss = 0
+    n = len(y_true)
+    for i in range(n):
+        error_sq = (y_pred[i] - y_true[i])**2
+        if y_true[i] != 0:
+            loss += error_sq / y_true[i]
+        else:
+            loss += error_sq / (1 + y_true[i]) # Denominator becomes 1
+    return loss / n
+
+# Calculate the loss on the test set
+test_loss = custom_loss(y_test, predictions)
+print(f"Custom Loss on Test Set: {test_loss}")
+
+# You would also calculate standard metrics
+# test_mae = mean_absolute_error(y_test, predictions)
+# print(f"MAE on Test Set: {test_mae}")
+
+# --- 7. Forecast Future ---
+# To forecast the *next* 12 months (beyond your current data):
+# 1. You need the feature values for those future months.
+# 2. Lags and rolling stats depend on previous predictions (recursive forecasting).
+# 3. You'll need to predict one month at a time, update the features using the prediction, and then predict the next month. This is more complex to set up.
+# (This step requires careful implementation of the feature generation for future time steps)
