@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import lightgbm as lgb
 from sklearn.model_selection import GridSearchCV
-from sklearn.metrics import make_scorer, mean_squared_error # Use MSE as a standard metric too
+from sklearn.metrics import make_scorer
 import joblib # For saving the model
 import time
 import logging
@@ -62,7 +62,7 @@ class LGBMForecaster:
     def __init__(self,
                  model_params=None,
                  train_params=None,
-                 categorical_features='auto'): # Let LGBM detect or pass from Preprocess
+                 categorical_features='auto'):
         """
         Initializes the LightGBM Forecaster.
 
@@ -100,9 +100,8 @@ class LGBMForecaster:
                              param_grid,
                              cv=3,
                              scoring=competition_scorer,
-                             val_year=2022,
                              target_col='Quantity',
-                             n_jobs = 15):
+                             n_jobs = 10):
         """
         Performs GridSearchCV to find the best hyperparameters.
 
@@ -112,36 +111,28 @@ class LGBMForecaster:
                                parameter settings to try as values.
             cv (int): Number of cross-validation folds. TimeSeriesSplit might be better.
             scoring (callable): Scorer to use for evaluation (e.g., competition_scorer).
-            val_year (int): Year to use for the validation set in the train/val split.
             target_col (str): Name of the target column.
         """
         logging.info("--- Starting Hyperparameter Tuning ---")
-        train_df, val_df = Preprocess.get_train_val_split(data, val_year=val_year)
 
-        X_train = train_df[self.feature_columns]
-        y_train = train_df[target_col]
-        # X_val = val_df[self.feature_columns] # Not directly used by GridSearchCV folds
-        # y_val = val_df[target_col]
+        X_train = data[self.feature_columns]
+        y_train = data[target_col]
 
-        # Note: Standard CV might shuffle data, which is bad for time series.
-        # Consider using TimeSeriesSplit from sklearn.model_selection
-        # from sklearn.model_selection import TimeSeriesSplit
-        # tscv = TimeSeriesSplit(n_splits=cv)
+        from sklearn.model_selection import TimeSeriesSplit
+        tscv = TimeSeriesSplit(n_splits=cv)
 
-        lgbm = lgb.LGBMRegressor(random_state=42, objective='regression_l1') # L1 (MAE) often robust
+        lgbm = lgb.LGBMRegressor(random_state=0, objective='regression_l1')
 
         grid_search = GridSearchCV(estimator=lgbm,
                                    param_grid=param_grid,
                                    scoring=scoring,
-                                   cv=cv, # Or tscv for time series split
-                                   n_jobs=n_jobs, # Use all available cores
-                                   verbose=3)
+                                   cv=tscv,
+                                   n_jobs=n_jobs,
+                                   verbose=1)
 
         start_time = time.time()
         grid_search.fit(X_train, y_train,
                         categorical_feature=self.categorical_features
-                        # eval_set=[(X_val, y_val)], # Can't use eval_set directly with GridSearchCV's fit
-                        # callbacks=[lgb.early_stopping(10, verbose=True)] # Also tricky with GridSearchCV CV
                        )
         end_time = time.time()
         logging.info(f"GridSearchCV completed in {end_time - start_time:.2f} seconds.")
@@ -157,7 +148,7 @@ class LGBMForecaster:
 
     def train(self,
               data,
-              forecast_start_year=2023,
+              forecast_start_year=2024,
               target_col='Quantity',
               use_best_params=True,
               save_model=True):
@@ -198,7 +189,7 @@ class LGBMForecaster:
         if save_model:
             self.save_model()
 
-    def _prepare_forecast_features(self, forecast_year=2023):
+    def _prepare_forecast_features(self, forecast_year=2024):
         """
         Prepares the feature DataFrame for the forecast period.
         Relies on the self.preprocessor instance having the full historical data.
@@ -267,9 +258,7 @@ class LGBMForecaster:
         logging.info("Applying categorical encoding for forecast period...")
         for col in self.preprocessor.categorical_features:
             if col in combined_df.columns:
-                # GETTING CATEGORIES FROM ORIGINAL DATA - GOOD
                 train_categories = self.preprocessor.df[col].cat.categories
-                # APPLYING CATEGORICAL DTYPE - SHOULD WORK
                 combined_df[col] = pd.Categorical(combined_df[col], categories=train_categories)
                 if combined_df[col].isnull().any():
                      logging.warning(f"NaNs introduced in categorical column '{col}' during forecast preparation.") # Could this cause issues? Maybe, but unlikely the dtype error.
@@ -311,7 +300,7 @@ class LGBMForecaster:
 
         return forecast_features_df
 
-    def predict(self, forecast_year=2023):
+    def predict(self, forecast_year=2024):
         """
         Generates predictions for the specified forecast year.
 
@@ -324,47 +313,43 @@ class LGBMForecaster:
         if self.model is None:
             raise RuntimeError("Model has not been trained yet. Call train() first.")
         if self.feature_columns is None:
-             raise RuntimeError("Feature columns not set. Ensure data preparation and training ran.")
+            raise RuntimeError("Feature columns not set. Ensure data preparation and training ran.")
+        if self.preprocessor is None:
+            raise RuntimeError("Preprocessor not available. Needed for constructing output.")
 
         logging.info(f"--- Generating Predictions for {forecast_year} ---")
 
         # Prepare features for the forecast period
-        X_forecast = self._prepare_forecast_features(forecast_year)
+        X_features_only = self._prepare_forecast_features(forecast_year)
 
         # Make predictions
-        predictions_raw = self.model.predict(X_forecast)
+        predictions_raw = self.model.predict(X_features_only)
 
         # Post-process predictions (non-negative integers)
         predictions_final = np.round(np.maximum(0, predictions_raw)).astype(int)
         logging.info("Predictions generated and post-processed.")
 
         # --- Format output ---
-        # Need Country, Product, Month (MmmYYYY), Quantity
-        # Get identifiers from the X_forecast index or related df
-        # The _prepare_forecast_features should ideally return the df with identifiers
+        all_processed_data = self.preprocessor.get_data()
+        historical_df = all_processed_data[all_processed_data['Year'] < forecast_year]
 
-        # Retrieve identifiers from the original future_df structure used in _prepare_forecast_features
-        historical_df = self.preprocessor.get_data()
-        unique_countries = historical_df['Country'].unique()
-        unique_products = historical_df['Product'].unique()
-        future_index = pd.MultiIndex.from_product(
+        unique_countries = sorted(historical_df['Country'].unique()) # Sort for consistent order
+        unique_products = sorted(historical_df['Product'].unique())  # Sort for consistent order
+        
+        output_index = pd.MultiIndex.from_product(
             [unique_countries, unique_products, [forecast_year], range(1, 13)],
             names=['Country', 'Product', 'Year', 'Month_Num']
         )
-        # Create the base DataFrame again to easily map predictions
-        output_df = pd.DataFrame(index=future_index).reset_index()
+        output_df = pd.DataFrame(index=output_index).reset_index()
+        
+        output_df.sort_values(by=['Country', 'Product', 'Year', 'Month_Num'], inplace=True)
+        output_df.reset_index(drop=True, inplace=True)
 
-        # Check length consistency
         if len(output_df) != len(predictions_final):
-             logging.error(f"Mismatch between number of expected forecast points ({len(output_df)}) and predictions made ({len(predictions_final)}). Check feature preparation.")
-             # Attempt to align based on available features if possible, or raise error
-             # For now, let's assume X_forecast rows correspond directly to output_df rows
-             # This relies on _prepare_forecast_features preserving the order.
-             min_len = min(len(output_df), len(predictions_final))
-             output_df = output_df.iloc[:min_len]
-             predictions_final = predictions_final[:min_len]
-             raise ValueError("Prediction length mismatch.")
-
+            logging.error(f"FATAL: Mismatch between number of expected forecast points ({len(output_df)}) based on unique historical Country/Product pairs and predictions made ({len(predictions_final)}).")
+            logging.error("This often happens if _prepare_forecast_features filters rows or if unique entities change unexpectedly.")
+            logging.error(f"Shape of X_features_only passed to predict: {X_features_only.shape}")
+            raise ValueError(f"Prediction length mismatch: Expected {len(output_df)}, Got {len(predictions_final)}")
 
         output_df['Quantity'] = predictions_final
 
@@ -373,10 +358,13 @@ class LGBMForecaster:
             1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
             7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"
         }
+        # Ensure Month_Num is int if it's not already
+        output_df['Month_Num'] = output_df['Month_Num'].astype(int)
         output_df['Month'] = output_df['Month_Num'].map(month_num_to_abbrev) + output_df['Year'].astype(str)
 
         # Select and order final columns
         output_df = output_df[['Country', 'Product', 'Month', 'Quantity']]
+        logging.info(f"Formatted predictions DataFrame shape: {output_df.shape}")
 
         return output_df
 
@@ -419,8 +407,6 @@ class LGBMForecaster:
         try:
             self.model = joblib.load(path)
             logging.info("Model loaded successfully.")
-            # Note: Feature columns and categorical features used for the loaded model
-            # are not automatically loaded. Ensure consistency or save/load them separately.
         except Exception as e:
             logging.error(f"Error loading model: {e}")
             raise
@@ -429,39 +415,35 @@ class LGBMForecaster:
 if __name__ == "__main__":
     # --- Configuration ---
     DO_TUNING = False # Set to True to run GridSearchCV
-    FORECAST_YEAR = 2023
-    VALIDATION_YEAR = 2022 # Year used for validation split during tuning/evaluation
+    FORECAST_YEAR = 2024
 
     # Preprocessing arguments
     preprocess_config = {
-        "rolling_window": 6,
-        "lag_periods": [1, 2, 3, 6, 12] # Example lag features
+        "rolling_window": 24,
+        "lag_periods": [1, 3, 6, 12]
     }
 
-    # LightGBM Model Parameters (Example - Start simple or use tuned params)
+    # LightGBM Model Parameters
     lgbm_model_params = {
-        'objective': 'regression_l1', # MAE is often robust to outliers
-        'metric': 'mae',
-        'n_estimators': 1000, # Can be high if using early stopping
-        'learning_rate': 0.05,
-        'feature_fraction': 0.8, # Colsample_bytree
-        'bagging_fraction': 0.8, # Subsample
+        'objective': 'regression_l1',
+        'metric': 'mse',
+        'n_estimators': 50,
+        'learning_rate': 0.01,
+        'feature_fraction': 0.8,
+        'bagging_fraction': 0.8,
         'bagging_freq': 1,
-        'lambda_l1': 0.1, # reg_alpha
-        'lambda_l2': 0.1, # reg_lambda
-        'num_leaves': 31, # Default
-        'verbose': -1, # Suppress verbose output
-        'n_jobs': 15, # Use all cores
+        'lambda_l1': 0.1,
+        'lambda_l2': 0.1,
+        'num_leaves': 20,
+        'verbose': -1,
+        'n_jobs': 1,
         'seed': 42,
         'boosting_type': 'gbdt',
-        'force_row_wise': True,  # To skip testing overhead, force row-wise
-        #'force_col_wise': True,  # To force column-wise (usually for memory saving)
+        'force_row_wise': True,
     }
 
-    # LightGBM Training Parameters (e.g., for early stopping)
+    # LightGBM Training Parameters
     lgbm_train_params = {
-        # Example: Using validation set for early stopping during FINAL training
-        # Requires splitting final_train_df further, or passing eval_set manually
         # 'callbacks': [lgb.early_stopping(stopping_rounds=50, verbose=True)],
         # 'eval_metric': 'mae' # Metric for early stopping
     }
@@ -471,32 +453,30 @@ if __name__ == "__main__":
                                 train_params=lgbm_train_params)
 
     # --- Load and Preprocess Data ---
-    # Store preprocessing args in the preprocessor instance for later use
     forecaster.preprocessor = Preprocess(pd.read_csv(DATA_DIR / INPUT_HISTORY_CSV))
     forecaster.preprocessor._last_preprocess_args = preprocess_config # Store args
     processed_data = forecaster.preprocessor.full_preprocess(**preprocess_config)
     forecaster.preprocessor.save_processed_data() 
     forecaster.feature_columns = forecaster.preprocessor.get_feature_columns()
-    forecaster.categorical_features = forecaster.preprocessor.categorical_features # Get actual cat features
+    forecaster.categorical_features = forecaster.preprocessor.categorical_features
     logging.info(f"Data prepared. Shape: {processed_data.shape}")
 
     # --- Optional: Hyperparameter Tuning ---
     if DO_TUNING:
         # Define parameter grid for GridSearchCV
         param_grid = {
-            'n_estimators': [200, 500, 1000],
-            'learning_rate': [0.02, 0.05, 0.1],
-            'num_leaves': [20, 31, 40],
-            # 'max_depth': [-1, 10, 20], # Often num_leaves is enough
-            'lambda_l1': [0, 0.1, 0.5],
-            'lambda_l2': [0, 0.1, 0.5],
+            'n_estimators': [75, 100],
+            'learning_rate': [0.004, 0.005, 0.006],
+            'num_leaves': [15, 17, 20],
+            'max_depth': [7, 10, 12],
+            'lambda_l1': [0.1],
+            'lambda_l2': [0.1],
             'force_row_wise': [True]
         }
         best_params = forecaster.tune_hyperparameters(data=processed_data,
                                                      param_grid=param_grid,
-                                                     cv=3, # Use TimeSeriesSplit ideally
-                                                     val_year=VALIDATION_YEAR)
-        # The forecaster's model_params are updated internally
+                                                     cv=5,
+                                                     n_jobs=2)
 
     # --- Train Final Model ---
     forecaster.train(data=processed_data,
@@ -504,16 +484,13 @@ if __name__ == "__main__":
                      save_model=True) # Save the trained model
 
     # --- Generate Predictions ---
-    # You could also load a previously saved model here if needed:
-    # forecaster.load_model()
-    # Ensure feature_columns and categorical_features are set correctly if loading
     predictions_df = forecaster.predict(forecast_year=FORECAST_YEAR)
 
     # --- Save Predictions ---
-    forecaster.save_predictions(predictions_df) # Saves to the default path with TEAM_CODE
+    forecaster.save_predictions(predictions_df)
 
-    from evaluate import evaluate
-
-    print(evaluate())
+    if FORECAST_YEAR >= 2024:
+        from evaluate import evaluate
+        print(evaluate())
 
     logging.info("--- Script Finished ---")

@@ -1,13 +1,12 @@
-from nn_spina import DATA_PATH, PREDICTIONS_SAVE_PATH
+from pathlib import Path
+
+# Absolute path (relative to the parent directory of the script's location)
+SCRIPT_DIR = Path(__file__).parent
+DATA_PATH = SCRIPT_DIR.parent / "data/01_input_history.csv"
+PREDICTIONS_SAVE_PATH = SCRIPT_DIR.parent / "output/01_output_prediction_8475.csv"
 from preprocessing import Preprocess
 import pandas as pd
 import numpy as np
-import os
-from pathlib import Path # Modern path handling
-
-
-BASE_PATH = Path(__file__).parent
-MERGED_PATH = os.path.join(BASE_PATH, '..', 'output', 'merged_data.csv')
 
 def my_score(reference, proposal):
     reference = np.array(reference)
@@ -35,10 +34,8 @@ def evaluate():
         original_data_2023,
         predictions,
         on=['Country', 'Product', 'Year', 'Month'],
-        how='inner'  # o 'left', a seconda delle tue esigenze
+        how='inner'
     )
-
-    merged_df.to_csv(MERGED_PATH, index=False)
 
     # Extract the true and predicted values
     y_true = merged_df['Quantity_x']

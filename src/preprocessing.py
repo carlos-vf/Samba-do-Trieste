@@ -1,15 +1,13 @@
 import numpy as np
 import pandas as pd
-# import sklearn # No longer needed directly here if splitting is handled outside
-import os
-import sys
+
 from pathlib import Path
 
 # Absolute path (relative to the parent directory of the script's location)
 SCRIPT_DIR = Path(__file__).parent
 DATA_DIR = SCRIPT_DIR.parent / "data"
 INPUT_HISTORY_CSV = '01_input_history.csv'
-PROCESSED_DATA_CSV = DATA_DIR / 'processed_lgbm_data.csv'  # Specific name for LGBM
+PROCESSED_DATA_CSV = DATA_DIR / 'processed_data.csv'
 
 # Ensure the input file exists
 if not (DATA_DIR / INPUT_HISTORY_CSV).exists():
@@ -154,28 +152,6 @@ class Preprocess:
         if 'Year' not in data.columns:
             raise ValueError("Column 'Year' needed for final training selection.")
         return data[data['Year'] < forecast_start_year].copy()
-
-
-if __name__ == "__main__":
-    print("Running preprocessing standalone...")
-    raw_data = pd.read_csv(DATA_DIR / INPUT_HISTORY_CSV)
-    preprocessor = Preprocess(raw_data)
-    processed_df = preprocessor.full_preprocess(rolling_window=6, lag_periods=[1, 2, 3, 12])
-    preprocessor.save_processed_data()
-
-    print("\nProcessed DataFrame Info:")
-    processed_df.info()
-    print("\nProcessed DataFrame Head:")
-    print(processed_df.head())
-    print("\nFeature Columns Identified:")
-    print(preprocessor.get_feature_columns())
-
-    print("\nExample Train/Validation Split (Validation Year 2022):")
-    train_df, val_df = Preprocess.get_train_val_split(processed_df, val_year=2022)
-
-    print("\nExample Data for Final Training (Forecast starting 2023):")
-    final_train_df = Preprocess.get_data_for_final_train(processed_df, forecast_start_year=2023)
-    print(f"Final training data shape: {final_train_df.shape}")
 
 
 
