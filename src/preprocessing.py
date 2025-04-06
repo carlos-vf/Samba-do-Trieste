@@ -1,10 +1,9 @@
-import numpy
+import numpy as np
 import pandas as pd
 import sklearn
 import os
 import sys
-from pathlib import Path # Modern path handling
-import nn
+from pathlib import Path
 
 # Absolute path
 INPUT_HISTORY_CSV = '01_input_history.csv'
@@ -27,24 +26,44 @@ class Preprocess:
     def get_data(self):
         return self.df
     
-    def parse_dates(self):
+    def parse_dates(self, prophet=False):
         """Parses the Month column into Year and Month numbers."""
         month_map = {
             "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
             "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12
         }
+
         def parse_month_year(mmyyyy):
             month_abbrev = mmyyyy[:3]
             year_str = mmyyyy[3:]
             year = int(year_str)
             month = month_map[month_abbrev]
-            # We only need Year and Month columns, not the timestamp
             return year, month
 
-        # Apply parsing and create separate Year/Month columns
-        parsed_dates = self.df['Month'].apply(lambda x: pd.Series(parse_month_year(x), index=['Year', 'Month_Num']))
-        self.df['Year'] = parsed_dates['Year']
-        self.df['Month'] = parsed_dates['Month_Num'] # Overwrite Month with numeric version
+        if prophet:
+            # If Month is already numeric, just build ds. Otherwise parse the text format.
+            if self.df['Month'].dtype == 'int':
+                self.df['ds'] = pd.to_datetime(self.df['Year'].astype(str) + '-' + 
+                                               self.df['Month'].astype(str).str.zfill(2) + '-01')
+                self.df['y'] = self.df['Quantity']
+                self.df.drop(columns=['Quantity', 'Year', 'Month'], inplace=True)
+            else:
+                parsed_dates = self.df['Month'].apply(lambda x: pd.Series(parse_month_year(x), 
+                                                                          index=['Year', 'Month_Num']))
+                self.df['Year'] = parsed_dates['Year']
+                self.df['Month'] = parsed_dates['Month_Num']
+                self.df['ds'] = pd.to_datetime(self.df['Year'].astype(str) + '-' + 
+                                               self.df['Month'].astype(str).str.zfill(2) + '-01')
+                self.df['y'] = self.df['Quantity']
+                self.df.drop(columns=['Quantity', 'Year', 'Month'], inplace=True)
+        else:
+            parsed_dates = self.df['Month'].apply(lambda x: pd.Series(parse_month_year(x), 
+                                                                      index=['Year', 'Month_Num']))
+            self.df['Year'] = parsed_dates['Year']
+            self.df['Month'] = parsed_dates['Month_Num']
+            self.df['month_sin'] = np.sin(2 * np.pi * parsed_dates['Month_Num']/12)
+            self.df['month_cos'] = np.cos(2 * np.pi * parsed_dates['Month_Num']/12)
+            
         
     def rolling_stats(self, window=3):
         """Creates lagged and rolling features."""
@@ -116,16 +135,6 @@ if __name__ == "__main__":
     preprocess.save_on_csv('data/processed_data.csv')
 
     X_train, y_train, X_val, y_val, X_test, y_test = preprocess.split_test_train()
-    
-    # X_train.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
-    # y_train.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
-    # X_test.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
-    # y_test.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
-    # X_val.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
-    # y_val.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
 
-    # Neural Netowrk
-    y_pred = nn.neural_network(X_train, y_train, X_val, y_val, X_test, y_test)
 
-    
 

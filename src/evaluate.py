@@ -47,3 +47,7 @@ def evaluate():
     loss = my_score(y_true, y_pred)
     
     return loss
+
+if __name__ == "__main__":
+    loss = evaluate()
+    print(f"Evaluation Loss: {loss}")

@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import TensorDataset, DataLoader
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import mean_squared_error # Example metric
+from sklearn.metrics import mean_squared_error
 import logging
 import sys
 from pathlib import Path # Modern path handling
@@ -56,15 +56,15 @@ class DemandForecastNet(nn.Module):
         super(DemandForecastNet, self).__init__()
         
         self.network = nn.Sequential(
-            nn.Linear(input_dim, 128),
+            nn.Linear(input_dim, 256),
             nn.ReLU(),
             nn.Dropout(0.2),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.BatchNorm1d(128),
             nn.Linear(128, 64),
             nn.ReLU(),
-            nn.BatchNorm1d(64),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Linear(32, 1),
+            nn.Linear(64, 1),
             nn.ReLU()
         )
 
@@ -352,7 +352,7 @@ def main():
     #? -------------------------------------------------
 
     trainer = Trainer(model, criterion, optimizer, device, scaler, CONFIG, MODEL_SAVE_PATH)
-    trainer.train(train_loader, val_loader)
+    #trainer.train(train_loader, val_loader)
 
     #? -------------------------------------------------
     #?         4. Load Best Model and Predict
