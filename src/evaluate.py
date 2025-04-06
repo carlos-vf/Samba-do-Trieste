@@ -1,4 +1,4 @@
-from nn import DATA_PATH, PREDICTIONS_SAVE_PATH
+from nn_spina import DATA_PATH, PREDICTIONS_SAVE_PATH
 from preprocessing import Preprocess
 import pandas as pd
 import numpy as np

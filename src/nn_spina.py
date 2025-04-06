@@ -1,5 +1,3 @@
-# --- START OF FILE nn.py ---
-
 import os
 import time
 import numpy as np

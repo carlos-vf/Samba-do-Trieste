@@ -4,6 +4,7 @@ import sklearn
 import os
 import sys
 from pathlib import Path # Modern path handling
+import nn
 
 # Absolute path
 INPUT_HISTORY_CSV = '01_input_history.csv'
@@ -114,7 +115,17 @@ if __name__ == "__main__":
     # Save the processed data to a CSV file
     preprocess.save_on_csv('data/processed_data.csv')
 
-    X_train, y_train, X_val, y_val, X_test, y_test = Preprocess.split_test_train(processed_data)
+    X_train, y_train, X_val, y_val, X_test, y_test = preprocess.split_test_train()
+    
+    # X_train.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
+    # y_train.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
+    # X_test.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
+    # y_test.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
+    # X_val.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
+    # y_val.drop(columns=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
 
-    print(X_train.iloc[1410:1420])  # Print first 10 columns of X_train
+    # Neural Netowrk
+    y_pred = nn.neural_network(X_train, y_train, X_val, y_val, X_test, y_test)
+
+    
 
