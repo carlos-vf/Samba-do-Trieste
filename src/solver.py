@@ -84,63 +84,46 @@ def pyomo_postprocess(model, results):
 #pyomo_postprocess(model, results)
 
 ################################################################################
-# Assuming model.X is your decision variable
 # Create a list to store rows for the CSV
 def create_csv():
     csv_data = []
 
-    # Loop through the model.X values (for indexed variables)
     for index, value in model.F.items():
-        # index is a tuple like ('Italy', 'Nov2004', 'SoothingSerenity Baby Oil')
         country, month, product = index
-        quantity = value(value)  # The quantity is the value of the decision variable
+        quantity = value(value)  
         
-        # Append formatted row to the csv_data list
         csv_data.append([country, product, month, quantity])
 
-    # Define the CSV file path
     csv_file_path = PRODUCTION_PLAN_PATH
 
-    # Write the data to the CSV file
     with open(csv_file_path, mode='w', newline='') as file:
         writer = csv.writer(file)
         
-        # Write the header row
         writer.writerow(['Country', 'Product', 'Month', 'Quantity'])
         
-        # Write the data rows
         writer.writerows(csv_data)
 
     print(f"CSV file '{csv_file_path}' has been created.")
 
     #############################################################################
 
-    # Assuming model.X is your decision variable
     # Create a list to store rows for the CSV
     csv_data = []
 
-    # Loop through the model.X values (for indexed variables)
     for index, value in model.SHIP.items():
-        # index is a tuple like ('United Kingdom', 'United Kingdom', 'Sep2004', 'SunShield SPF 50 Lotion')
         origin, destination, month, product = index
         
-        # Here, you may get 'None' values for some attributes if the model didn't assign a value
         quantity = value(value) if value(value) is not None else 0  # Assign 0 if no value exists for the variable
 
-        # Append formatted row to the csv_data list
         csv_data.append([origin, destination, product, month, quantity])
 
-    # Define the CSV file path
     csv_file_path = SHIPMENT_PLAN_PATH
 
-    # Write the data to the CSV file
     with open(csv_file_path, mode='w', newline='') as file:
         writer = csv.writer(file)
         
-        # Write the header row
         writer.writerow(['Origin', 'Destination', 'Product', 'Month', 'Quantity'])
         
-        # Write the data rows
         writer.writerows(csv_data)
 
     print(f"CSV file '{csv_file_path}' has been created.")

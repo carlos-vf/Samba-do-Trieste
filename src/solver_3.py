@@ -11,7 +11,7 @@ SHIPMENT_PLAN_PATH = SCRIPT_DIR.parent / "output" / "03_output_shipments_8475.cs
 SHIPMENT_COST_PATH = SCRIPT_DIR.parent / "data" / "02_03_input_shipmentsCost_example.csv"
 PRODUCTION_COST_PATH = SCRIPT_DIR.parent / "data" / "03_input_productionCost.csv"
 
-M_PENALTY = 5000000
+M_PENALTY = 100
 
 # Create the model
 model = ConcreteModel()

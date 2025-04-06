@@ -44,3 +44,48 @@ France,Russia,9.45
 India,United Kingdom,6.87
 India,Russia,8.97
 United Kingdom,Russia,13.01
+South Africa,Egypt,38
+South Africa,Brazil,27
+South Africa,Japan,46
+South Africa,Australia,25
+South Africa,Italy,43
+Egypt,Brazil,34
+Egypt,Japan,19
+Egypt,Australia,46
+Brazil,Japan,36
+Brazil,Australia,50
+France,South Africa,6
+France,Egypt,49
+France,Brazil,33
+France,Japan,18
+France,Australia,10
+France,Italy,18
+Australia,Japan,26
+United Kingdom,South Africa,16
+United Kingdom,Egypt,43
+United Kingdom,Brazil,34
+United Kingdom,Japan,29
+United Kingdom,France,13
+United Kingdom,Australia,41
+United Kingdom,Italy,18
+United Kingdom,India,16
+Italy,Egypt,23
+Italy,Brazil,10
+Italy,Japan,47
+Italy,Australia,45
+India,South Africa,31
+India,Egypt,39
+India,Brazil,26
+India,Japan,40
+India,France,21
+India,Australia,50
+India,Italy,25
+Russia,South Africa,40
+Russia,Egypt,39
+Russia,Brazil,34
+Russia,Japan,35
+Russia,France,11
+Russia,Australia,44
+Russia,United Kingdom,50
+Russia,Italy,32
+Russia,India,6
