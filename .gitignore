@@ -1,2 +1,9 @@
 venv/
 data/processed_data.csv
+/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite
+*.log

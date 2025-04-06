@@ -3,14 +3,19 @@ import pandas as pd
 import sklearn
 import os
 import sys
+from pathlib import Path # Modern path handling
 
 # Absolute path
-FILE_PATH = 'data/01_input_history.csv'
-abs_path = os.path.abspath(os.path.join("..", FILE_PATH))
+INPUT_HISTORY_CSV = '01_input_history.csv'
+PROCESSED_DATA_CSV = 'processed_data.csv'
 
+SCRIPT_DIR = Path(__file__).parent
+DATA_DIR = SCRIPT_DIR.parent / "data"
 
-if not os.path.exists(FILE_PATH):
-    raise FileNotFoundError(f"Il file {FILE_PATH} non esiste.")
+abs_path = os.path.abspath(os.path.join("..", INPUT_HISTORY_CSV))
+
+if not os.path.exists(DATA_DIR / INPUT_HISTORY_CSV):
+    raise FileNotFoundError(f"Il file {DATA_DIR / INPUT_HISTORY_CSV} non esiste.")
 
 class Preprocess:
     
@@ -21,92 +26,77 @@ class Preprocess:
     def get_data(self):
         return self.df
     
-    def rolling_stats(self, window=3):
-        """
-        Create lagged features and rolling statistics for the time series.
-        We assume we still have the columns ['Country', 'Product', 'Year', 'Month', 'Quantity'] 
-        in self.data or some variant of these. 
-        """
-        df = self.df.copy()
-        
-        # Ensure we have numeric Year, Month for sorting
-        # (Adapt if your data uses 'Date' or some other date-like column.)
-        df.sort_values(by=['Country', 'Product', 'Year', 'Month'], inplace=True)
-
-        # Group by Country, Product to treat each as a separate time series
-        group_cols = ['Country', 'Product']
-        
-        # Create lag features (shift the Quantity by 1, 2, 3 months, etc.)
-        df['lag_1'] = df.groupby(group_cols)['Quantity'].shift(1)
-        df['lag_2'] = df.groupby(group_cols)['Quantity'].shift(2)
-        df['lag_3'] = df.groupby(group_cols)['Quantity'].shift(3)
-
-        # Example rolling features: rolling mean, rolling std
-        # We'll do rolling after shift(1) so the current row isn't included in its own average.
-        # But a simpler approach is to directly use the .rolling() on the unshifted 'Quantity' column,
-        # just be mindful to set min_periods if needed.
-        
-        # rolling_mean
-        df['rolling_mean_6'] = (
-            df.groupby(group_cols)['Quantity']
-              .rolling(window=window, min_periods=1)
-              .mean()
-              .reset_index(level=group_cols, drop=True)
-        )
-        
-        # rolling_std
-        df['rolling_std_6'] = (
-            df.groupby(group_cols)['Quantity']
-              .rolling(window=window, min_periods=1)
-              .std()
-              .reset_index(level=group_cols, drop=True)
-        )
-
-        # Assign the resulting DataFrame to self.rolled_data
-        self.rolled_data = df
-    
-    def preprocess_data(self):
+    def parse_dates(self):
+        """Parses the Month column into Year and Month numbers."""
         month_map = {
             "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
             "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12
         }
-        
         def parse_month_year(mmyyyy):
-            # First 3 letters => month abbreviation
             month_abbrev = mmyyyy[:3]
-            # The rest => year string
             year_str = mmyyyy[3:]
-            # Convert the abbreviation and year to integer
             year = int(year_str)
             month = month_map[month_abbrev]
-            # Construct a datetime (use day=1 as a placeholder)
-            return pd.Timestamp(year=year, month=month, day=1)
-        
-        self.df['Month'] = self.df['Month'].apply(parse_month_year)
+            # We only need Year and Month columns, not the timestamp
+            return year, month
 
-        # Create separate columns for year and month if desired
-        self.df['Year'] = self.df['Month'].dt.year
-        self.df['Month'] = self.df['Month'].dt.month
+        # Apply parsing and create separate Year/Month columns
+        parsed_dates = self.df['Month'].apply(lambda x: pd.Series(parse_month_year(x), index=['Year', 'Month_Num']))
+        self.df['Year'] = parsed_dates['Year']
+        self.df['Month'] = parsed_dates['Month_Num'] # Overwrite Month with numeric version
         
-        self.rolling_stats(window=6)
-        
-        self.df = self.rolled_data.dropna(subset=['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6'])
-        
+    def rolling_stats(self, window=3):
+        """Creates lagged and rolling features."""
+        # Ensure data is sorted for correct lagging/rolling
+        self.df.sort_values(by=['Country', 'Product', 'Year', 'Month'], inplace=True)
+        group_cols = ['Country', 'Product']
+
+        self.df['lag_1'] = self.df.groupby(group_cols)['Quantity'].shift(1)
+        self.df['lag_2'] = self.df.groupby(group_cols)['Quantity'].shift(2)
+        self.df['lag_3'] = self.df.groupby(group_cols)['Quantity'].shift(3)
+
+        # Use transform for potentially cleaner rolling calculations
+        self.df['rolling_mean_6'] = self.df.groupby(group_cols)['Quantity'].transform(
+            lambda x: x.rolling(window=window, min_periods=1).mean()
+        )
+        self.df['rolling_std_6'] = self.df.groupby(group_cols)['Quantity'].transform(
+            lambda x: x.rolling(window=window, min_periods=1).std()
+        )
+        # Fill initial NaNs in std dev (first element of each group)
+        self.df['rolling_std_6'] = self.df.groupby(group_cols)['rolling_std_6'].ffill()
+    
+    def handle_dummies(self):
+        """Creates one-hot encoded features."""
         self.df = pd.get_dummies(self.df, columns=['Country', 'Product'], drop_first=False)
+
+    def drop_na_features(self):
+        """Drops rows with NaN in lag/rolling features."""
+        feature_cols = ['lag_1', 'lag_2', 'lag_3', 'rolling_mean_6', 'rolling_std_6']
+        self.df.dropna(subset=feature_cols, inplace=True)
+        
+    def preprocess_data(self, window=6):
+        """Consolidated preprocessing steps."""
+        self.parse_dates()
+        self.rolling_stats(window=window)
+        self.drop_na_features() # Drop NAs *after* creating features
+        self.handle_dummies()
                 
-    def split_test_train(self, test_year=2023, target_col='Quantity'):
+    def split_test_train(data, val_year = 2022, test_year=2023, target_col='Quantity'):
         """
         Splits the data into train and test sets based on the year.
         """
-        train_data = self.df[self.df['Year'] < test_year]
-        test_data = self.df[self.df['Year'] == test_year]
+        train_data = data[(data['Year'] != val_year) & (data['Year'] != test_year)]
+        val_data = data[data['Year'] == val_year]
+        test_data = data[data['Year'] == test_year]
         
         X_train = train_data.drop(columns=[target_col])
         y_train = train_data[target_col]
+        X_val = val_data.drop(columns=[target_col])
+        y_val = val_data[target_col]
         X_test = test_data.drop(columns=[target_col])
         y_test = test_data[target_col]
         
-        return X_train, y_train, X_test, y_test
+        return X_train, y_train, X_val, y_val, X_test, y_test
     
     def save_on_csv(self, path):
         """
@@ -114,9 +104,8 @@ class Preprocess:
         """
         self.df.to_csv(path, index=False)
                 
-                
 if __name__ == "__main__":
-    data = pd.read_csv(FILE_PATH)
+    data = pd.read_csv(DATA_DIR / INPUT_HISTORY_CSV)
     
     preprocess = Preprocess(data)
     preprocess.preprocess_data()
@@ -125,10 +114,7 @@ if __name__ == "__main__":
     # Save the processed data to a CSV file
     preprocess.save_on_csv('data/processed_data.csv')
 
-    X_train, y_train, X_test, y_test = preprocess.split_test_train()
+    X_train, y_train, X_val, y_val, X_test, y_test = Preprocess.split_test_train(processed_data)
 
-    print(X_train.head(1))
-    print(y_train.head(1))
-    print(X_test.head(1))
-    print(y_test.head(1))
+    print(X_train.iloc[1410:1420])  # Print first 10 columns of X_train
 
