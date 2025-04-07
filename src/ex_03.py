@@ -45,7 +45,7 @@ model.P = Set(initialize=products) # Products
 
 # Parameters
 model.Capacity = Param(model.N, initialize=capacity_data) 
-model.Demand = Param(model.N, model.M, model.P, initialize=demand_data)
+model.Demand = Param(model.N, model.M, model.P, initialize=demand_data, default=0)
 model.ProdCost = Param(model.N,model.P,initialize= prodcost_data)
 model.TranspCost = Param(model.N,model.N, initialize = prodtransp_data, default = 0)
 
@@ -63,6 +63,10 @@ model.ProductionConstraint = Constraint(model.N,model.M ,rule=production_constra
 def availability_constraint_rule(model, n, m, p):
     return model.X[n, m, p] == model.F[n,m,p]+sum(model.SHIP[n2,n,m,p] for n2 in model.N if n2!=n)-sum(model.SHIP[n,n2,m,p] for n2 in model.N if n2!=n)
 model.AvailableConstraint = Constraint(model.N, model.M, model.P, rule=availability_constraint_rule)
+
+def all_demand_satisfied(model,n,m,p):
+    return model.Demand[n,m,p] == model.X[n, m, p]  
+model.SatisfiedConstraint = Constraint(model.N, model.M, model.P, rule= all_demand_satisfied)
 
 # Constraint: Capacity exports 
 def capacity_constraint_rule(model, n, m,p):
@@ -83,10 +87,10 @@ def demand_satisfaction_rule(model, n, m, p):
         return model.X[n, m, p] <= model.Demand[n, m, p]
     else:
         return model.X[n, m, p] == 0 
-model.DemandSatisfactionConstraint = Constraint(model.N, model.M, model.P, rule=demand_satisfaction_rule)
+#model.DemandSatisfactionConstraint = Constraint(model.N, model.M, model.P, rule=demand_satisfaction_rule)
 
 def objective_rule(model):
-    return M_PENALTY * sum(model.Demand[n,m,p] - model.X[n, m, p] for n in model.N for m in model.M for p in model.P) + sum(model.ProdCost[n,p]*model.F[n,m,p] for n in model.N for m in model.M for p in model.P)+sum(model.TranspCost[n,n2]*model.SHIP[n,n2,m,p] for m in model.M for p in model.P  for n in model.N for n2 in model.N if n!=n2)
+    return sum(model.ProdCost[n,p]*model.F[n,m,p] for n in model.N for m in model.M for p in model.P)+sum(model.TranspCost[n,n2]*model.SHIP[n,n2,m,p] for m in model.M for p in model.P  for n in model.N for n2 in model.N if n!=n2)
 model.Obj = Objective(rule=objective_rule, sense=minimize)
 
 solver = SolverFactory('glpk')
