@@ -11,8 +11,6 @@ SHIPMENT_PLAN_PATH = SCRIPT_DIR.parent / "output" / "03_output_shipments_8475.cs
 SHIPMENT_COST_PATH = SCRIPT_DIR.parent / "data" / "02_03_input_shipmentsCost_example.csv"
 PRODUCTION_COST_PATH = SCRIPT_DIR.parent / "data" / "03_input_productionCost.csv"
 
-M_PENALTY = 100
-
 # Create the model
 model = ConcreteModel()
 
@@ -80,14 +78,6 @@ def shipment_constraint_rule(model, n, n2):
         return sum(model.SHIP[n,n2, m, p] for m in model.M for p in model.P) == 0
     return Constraint.Skip
 model.ShipmentConstraint = Constraint(model.N, model.N, rule= shipment_constraint_rule)
-
-# Constraint: Satisfied demand cannot exceed actual demand
-def demand_satisfaction_rule(model, n, m, p):
-    if (n, m, p) in model.Demand:
-        return model.X[n, m, p] <= model.Demand[n, m, p]
-    else:
-        return model.X[n, m, p] == 0 
-#model.DemandSatisfactionConstraint = Constraint(model.N, model.M, model.P, rule=demand_satisfaction_rule)
 
 def objective_rule(model):
     return sum(model.ProdCost[n,p]*model.F[n,m,p] for n in model.N for m in model.M for p in model.P)+sum(model.TranspCost[n,n2]*model.SHIP[n,n2,m,p] for m in model.M for p in model.P  for n in model.N for n2 in model.N if n!=n2)
